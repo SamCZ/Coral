@@ -1,0 +1,16 @@
+project(NetCore)
+
+add_library(NetCore::LibNetHost STATIC IMPORTED GLOBAL)
+set_target_properties(NetCore::LibNetHost PROPERTIES
+				INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
+				IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/libnethost.lib)
+
+add_library(NetCore::NetHost SHARED IMPORTED GLOBAL)
+set_target_properties(NetCore::NetHost PROPERTIES
+				INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
+				IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/nethost.dll
+				IMPORTED_IMPLIB ${CMAKE_CURRENT_SOURCE_DIR}/nethost.lib)
+
+add_library(NetCore::NetCore INTERFACE IMPORTED GLOBAL)
+set_property(TARGET NetCore::NetCore PROPERTY
+				INTERFACE_LINK_LIBRARIES NetCore::LibNetHost NetCore::NetHost)
