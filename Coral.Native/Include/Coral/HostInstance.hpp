@@ -8,9 +8,12 @@
 #include "ManagedField.hpp"
 #include "MethodInfo.hpp"
 
+#include <functional>
+
 namespace Coral {
 
-	using ErrorCallbackFn = void(*)(const CharType* InMessage);
+	using ErrorCallbackFn = std::function<void(std::string_view)>;
+	using ExceptionCallbackFn = std::function<void(std::string_view)>;
 
 	struct HostSettings
 	{
@@ -19,16 +22,18 @@ namespace Coral {
 		/// </summary>
 		std::string_view CoralDirectory;
 		
-		ErrorCallbackFn ErrorCallback = nullptr;
+		ErrorCallbackFn ErrorCallback;
+		ExceptionCallbackFn ExceptionCallback;
 	};
 
 	class HostInstance
 	{
 	public:
 		bool Initialize(HostSettings InSettings);
+		void Shutdown();
 
-		ManagedAssembly LoadAssembly(std::string_view InFilePath);
-		void UnloadAssemblyLoadContext(ManagedAssembly& InAssembly);
+		AssemblyLoadContext CreateAssemblyLoadContext(std::string_view InName);
+		void UnloadAssemblyLoadContext(AssemblyLoadContext& InLoadContext);
 
 		template<typename... TArgs>
 		ManagedObject CreateInstance(std::string_view InTypeName, TArgs&&... InArguments)
@@ -40,8 +45,7 @@ namespace Coral {
 			if constexpr (argumentCount > 0)
 			{
 				const void* argumentsArr[argumentCount];
-				ManagedType argumentTypes[argumentCount];
-				AddToArray<TArgs...>(argumentsArr, argumentTypes, std::forward<TArgs>(InArguments)..., std::make_index_sequence<argumentCount> {});
+				AddToArray<TArgs...>(argumentsArr, std::forward<TArgs>(InArguments)..., std::make_index_sequence<argumentCount> {});
 				result = CreateInstanceInternal(InTypeName, argumentsArr, argumentCount);
 			}
 			else
@@ -54,9 +58,6 @@ namespace Coral {
 		void DestroyInstance(ManagedObject& InObjectHandle);
 
 		void FreeString(const CharType* InString);
-
-		using ExceptionCallbackFn = void(*)(const CharType*);
-		void SetExceptionCallback(ExceptionCallbackFn InCallback);
 
 		ReflectionType& GetReflectionType(const CSString& InTypeName);
 		ReflectionType& GetReflectionType(ManagedObject InObject);
@@ -88,6 +89,8 @@ namespace Coral {
 		std::unordered_map<size_t, ReflectionType> m_ReflectionTypes;
 		std::unordered_map<size_t, std::vector<ManagedField>> m_Fields;
 		std::unordered_map<size_t, std::vector<MethodInfo>> m_Methods;
+
+		friend class AssemblyLoadContext;
 	};
 
 }

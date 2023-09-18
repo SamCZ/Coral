@@ -20,9 +20,12 @@ namespace Coral {
 	public:
 		int32_t GetAssemblyID() const { return m_AssemblyID; }
 		AssemblyLoadStatus GetLoadStatus() const { return m_LoadStatus; }
+		std::string_view GetName() const { return m_Name; }
 
 		void AddInternalCall(std::string_view InClassName, std::string_view InVariableName, void* InFunctionPtr);
 		void UploadInternalCalls();
+
+		TypeId GetTypeId(std::string_view InClassName) const;
 
 		const std::vector<ReflectionType>& GetTypes() const { return m_ReflectionTypes; }
 		
@@ -48,6 +51,22 @@ namespace Coral {
 
 		std::vector<ReflectionType> m_ReflectionTypes;
 		
+		friend class HostInstance;
+		friend class AssemblyLoadContext;
+	};
+
+	class AssemblyLoadContext
+	{
+	public:
+		ManagedAssembly& LoadAssembly(std::string_view InFilePath);
+		const std::vector<ManagedAssembly>& GetLoadedAssemblies() const { return m_LoadedAssemblies; }
+
+	private:
+		int32_t m_ContextId;
+		std::vector<ManagedAssembly> m_LoadedAssemblies;
+
+		HostInstance* m_Host = nullptr;
+
 		friend class HostInstance;
 	};
 

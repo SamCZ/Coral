@@ -14,11 +14,10 @@ namespace Coral {
 	class ManagedField;
 	struct MethodInfo;
 
-	using ExceptionCallbackFn = void(*)(const CharType*);
-
 	using SetInternalCallsFn = void(*)(UnmanagedArray*);
-	using LoadManagedAssemblyFn = int32_t(*)(const CharType*);
+	using CreateAssemblyLoadContextFn = int32_t(*)(const CharType*);
 	using UnloadAssemblyLoadContextFn = void(*)(int32_t);
+	using LoadManagedAssemblyFn = int32_t(*)(int32_t, const CharType*);
 	using GetLastLoadStatusFn = AssemblyLoadStatus(*)();
 	using GetAssemblyNameFn = const CharType*(*)(int32_t);
 	using QueryAssemblyTypesFn = void(*)(int32_t, ReflectionType*, int32_t*);
@@ -26,6 +25,7 @@ namespace Coral {
 	using GetReflectionTypeFromObjectFn = Bool32(*)(void*, ReflectionType*);
 	using GetFieldsFn = void(*)(const CharType*, ManagedField*, int32_t*);
 	using GetTypeMethodsFn = void(*)(const CharType*, MethodInfo*, int32_t*);
+	using GetTypeIdFn = void(*)(const CharType*, TypeId*);
 	
 	using FreeManagedStringFn = void(*)(const CharType*);
 	
@@ -41,7 +41,7 @@ namespace Coral {
 	using IsAssignableToFn = Bool32(*)(const CharType*, const CharType*);
 	using IsAssignableFromFn = Bool32(*)(const CharType*, const CharType*);
 
-	using SetExceptionCallbackFn = void(*)(ExceptionCallbackFn);
+	using SetExceptionCallbackFn = void(*)(void(*)(const CharType*));
 
 	using CollectGarbageFn = void(*)(int32_t, GCCollectionMode, Bool32, Bool32);
 	using WaitForPendingFinalizersFn = void(*)();
@@ -58,10 +58,12 @@ namespace Coral {
 		GetReflectionTypeFromObjectFn GetReflectionTypeFromObjectFptr = nullptr;
 		GetFieldsFn GetFieldsFptr = nullptr;
 		GetTypeMethodsFn GetTypeMethodsFptr = nullptr;
+		GetTypeIdFn GetTypeIdFptr = nullptr;
 		
 		FreeManagedStringFn FreeManagedStringFptr = nullptr;
 
 		CreateObjectFn CreateObjectFptr = nullptr;
+		CreateAssemblyLoadContextFn CreateAssemblyLoadContextFptr = nullptr;
 		InvokeMethodFn InvokeMethodFptr = nullptr;
 		InvokeMethodRetFn InvokeMethodRetFptr = nullptr;
 		SetFieldValueFn SetFieldValueFptr = nullptr;
