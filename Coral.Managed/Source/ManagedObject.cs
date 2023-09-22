@@ -8,30 +8,22 @@ namespace Coral.Managed;
 
 internal static class ManagedObject
 {
-	[StructLayout(LayoutKind.Sequential)]
-	public readonly struct ObjectCreateInfo
-	{
-		public readonly UnmanagedString TypeName;
-		public readonly bool IsWeakRef;
-		public readonly UnmanagedArray Parameters;
-	}
-
 	private struct ObjectData
 	{
 		public IntPtr Handle;
-		public UnmanagedString FullName;
+		public NativeString FullName;
 	}
 	
 	[UnmanagedCallersOnly]
-	private static unsafe ObjectData CreateObject(ObjectCreateInfo* InCreateInfo)
+	private static unsafe ObjectData CreateObject(NativeString InTypeName, Bool32 InWeakRef, IntPtr InParameters, int InParameterCount)
 	{
 		try
 		{
-			var type = TypeHelper.FindType(InCreateInfo->TypeName);
+			var type = TypeHelper.FindType(InTypeName);
 
 			if (type == null)
 			{
-				throw new TypeNotFoundException($"Failed to find type with name {InCreateInfo->TypeName}");
+				throw new TypeNotFoundException($"Failed to find type with name {InTypeName}");
 			}
 
 			ConstructorInfo? constructor = null;
@@ -42,7 +34,7 @@ internal static class ManagedObject
 				ReadOnlySpan<ConstructorInfo> constructors = currentType.GetConstructors(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
 				foreach (var constructorInfo in constructors)
 				{
-					if (constructorInfo.GetParameters().Length != InCreateInfo->Parameters.Length)
+					if (constructorInfo.GetParameters().Length != InParameterCount)
 						continue;
 
 					constructor = constructorInfo;
@@ -60,7 +52,7 @@ internal static class ManagedObject
 				throw new MissingMethodException($"No suitable constructor found for type {type}");
 			}
 
-			var parameters = Marshalling.MarshalParameterArray(InCreateInfo->Parameters, constructor);
+			var parameters = Marshalling.MarshalParameterArray(InParameters, InParameterCount, constructor);
 
 			object? result = null;
 
@@ -77,19 +69,19 @@ internal static class ManagedObject
 			}
 
 			if (result == null)
-				return new() { Handle = IntPtr.Zero, FullName = UnmanagedString.Null() }; // TODO(Peter): Exception
+				return new() { Handle = IntPtr.Zero, FullName = "" }; // TODO(Peter): Exception
 
-			var handle = GCHandle.Alloc(result, InCreateInfo->IsWeakRef ? GCHandleType.Weak : GCHandleType.Normal);
+			var handle = GCHandle.Alloc(result, InWeakRef ? GCHandleType.Weak : GCHandleType.Normal);
 			return new()
 			{
 				Handle = GCHandle.ToIntPtr(handle),
-				FullName = UnmanagedString.FromString(type.FullName)
+				FullName = type.FullName
 			};
 		}
 		catch (Exception ex)
 		{
 			ManagedHost.HandleException(ex);
-			return new() { Handle = IntPtr.Zero, FullName = UnmanagedString.Null() };
+			return new() { Handle = IntPtr.Zero, FullName = "" };
 		}
 	}
 
@@ -107,7 +99,7 @@ internal static class ManagedObject
 	}
 
 	[UnmanagedCallersOnly]
-	private static void InvokeMethod(IntPtr InObjectHandle, UnmanagedString InMethodName, UnmanagedArray InParameters)
+	private static void InvokeMethod(IntPtr InObjectHandle, NativeString InMethodName, IntPtr InParameters, int InParameterCount)
 	{
 		try
 		{
@@ -126,7 +118,7 @@ internal static class ManagedObject
 			foreach (var mi in methods)
 			{
 				// TODO(Peter): Check types
-				if (mi.Name != InMethodName || mi.GetParameters().Length != InParameters.Length)
+				if (mi.Name != InMethodName || mi.GetParameters().Length != InParameterCount)
 					continue;
 
 				methodInfo = mi;
@@ -138,7 +130,7 @@ internal static class ManagedObject
 				throw new MissingMethodException($"Method {InMethodName} wasn't found.");
 			}
 
-			var parameters = Marshalling.MarshalParameterArray(InParameters, methodInfo);
+			var parameters = Marshalling.MarshalParameterArray(InParameters, InParameterCount, methodInfo);
 
 			methodInfo.Invoke(target, parameters);
 		}
@@ -149,7 +141,7 @@ internal static class ManagedObject
 	}
 	
 	[UnmanagedCallersOnly]
-	private static void InvokeMethodRet(IntPtr InObjectHandle, UnmanagedString InMethodName, UnmanagedArray InParameters, IntPtr InResultStorage)
+	private static void InvokeMethodRet(IntPtr InObjectHandle, NativeString InMethodName, IntPtr InParameters, int InParameterCount, IntPtr InResultStorage)
 	{
 		try
 		{
@@ -167,7 +159,7 @@ internal static class ManagedObject
 			MethodInfo? methodInfo = null;
 			foreach (var mi in methods)
 			{
-				if (mi.Name != InMethodName || mi.GetParameters().Length != InParameters.Length)
+				if (mi.Name != InMethodName || mi.GetParameters().Length != InParameterCount)
 					continue;
 				
 				methodInfo = mi;
@@ -179,44 +171,14 @@ internal static class ManagedObject
 				throw new MissingMethodException($"Method {InMethodName} wasn't found.");
 			}
 
-			var methodParameters = Marshalling.MarshalParameterArray(InParameters, methodInfo);
+			var methodParameters = Marshalling.MarshalParameterArray(InParameters, InParameterCount, methodInfo);
 			
 			object? value = methodInfo.Invoke(target, methodParameters);
 
 			if (value == null)
 				return;
 
-			var returnType = methodInfo.ReturnType;
-			
-			if (value is string s)
-			{
-				var nativeString = UnmanagedString.FromString(s);
-				Marshal.WriteIntPtr(InResultStorage, nativeString.m_NativeString);
-			}
-			else if (returnType.IsPointer)
-			{
-				unsafe
-				{
-					void* valuePointer = Pointer.Unbox(value);
-					Buffer.MemoryCopy(&valuePointer, InResultStorage.ToPointer(), IntPtr.Size, IntPtr.Size);
-				}
-			}
-			else if (returnType.IsSZArray)
-			{
-				Marshalling.CopyArrayToBuffer(InResultStorage, value as Array, returnType.GetElementType());
-			}
-			else
-			{
-				var valueSize = Marshal.SizeOf(returnType);
-				var handle = GCHandle.Alloc(value, GCHandleType.Pinned);
-
-				unsafe
-				{
-					Buffer.MemoryCopy(handle.AddrOfPinnedObject().ToPointer(), InResultStorage.ToPointer(), valueSize, valueSize);
-				}
-				
-				handle.Free();
-			}
+			Marshalling.MarshalReturnValue(value, methodInfo.ReturnType, InResultStorage);
 		}
 		catch (Exception ex)
 		{
@@ -225,7 +187,7 @@ internal static class ManagedObject
 	}
 
 	[UnmanagedCallersOnly]
-	private static void SetFieldValue(IntPtr InTarget, UnmanagedString InFieldName, IntPtr InValue)
+	private static void SetFieldValue(IntPtr InTarget, NativeString InFieldName, IntPtr InValue)
 	{
 		try
 		{
@@ -246,7 +208,7 @@ internal static class ManagedObject
 
 			object? value;
 
-			if (fieldInfo.FieldType == typeof(string) || fieldInfo.FieldType.IsPointer || fieldInfo.FieldType == typeof(IntPtr))
+			if (fieldInfo.FieldType.IsPointer || fieldInfo.FieldType == typeof(IntPtr))
 			{
 				value = Marshalling.MarshalPointer(Marshal.ReadIntPtr(InValue), fieldInfo.FieldType);
 			}
@@ -268,7 +230,7 @@ internal static class ManagedObject
 	}
 
 	[UnmanagedCallersOnly]
-	private static void GetFieldValue(IntPtr InTarget, UnmanagedString InFieldName, IntPtr OutValue)
+	private static void GetFieldValue(IntPtr InTarget, NativeString InFieldName, IntPtr OutValue)
 	{
 		try
 		{
@@ -287,47 +249,7 @@ internal static class ManagedObject
 				throw new MissingFieldException($"Failed to find field named {InFieldName} in {targetType}");
 			}
 
-			var value = fieldInfo.GetValue(target);
-
-			if (fieldInfo.FieldType.IsSZArray)
-			{
-				var array = value as Array;
-				var elementType = fieldInfo.FieldType.GetElementType();
-				Marshalling.CopyArrayToBuffer(OutValue, array, elementType);
-			}
-			else if (value is string s)
-			{
-				var nativeString = UnmanagedString.FromString(s);
-				Marshal.WriteIntPtr(OutValue, nativeString.m_NativeString);
-			}
-			else if (fieldInfo.FieldType.IsPointer)
-			{
-				unsafe
-				{
-					if (value == null)
-					{
-						Marshal.WriteIntPtr(OutValue, IntPtr.Zero);
-					}
-					else
-					{
-						void* valuePointer = Pointer.Unbox(value);
-						Buffer.MemoryCopy(&valuePointer, OutValue.ToPointer(), IntPtr.Size, IntPtr.Size);
-					}
-
-				}
-			}
-			else
-			{
-				var valueSize = Marshal.SizeOf(fieldInfo.FieldType);
-				var handle = GCHandle.Alloc(value, GCHandleType.Pinned);
-
-				unsafe
-				{
-					Buffer.MemoryCopy(handle.AddrOfPinnedObject().ToPointer(), OutValue.ToPointer(), valueSize, valueSize);
-				}
-
-				handle.Free();
-			}
+			Marshalling.MarshalReturnValue(fieldInfo.GetValue(target), fieldInfo.FieldType, OutValue);
 		}
 		catch (Exception ex)
 		{
@@ -336,7 +258,7 @@ internal static class ManagedObject
 	}
 
 	[UnmanagedCallersOnly]
-	private static void SetPropertyValue(IntPtr InTarget, UnmanagedString InPropertyName, IntPtr InValue)
+	private static void SetPropertyValue(IntPtr InTarget, NativeString InPropertyName, IntPtr InValue)
 	{
 		try
 		{
@@ -362,7 +284,7 @@ internal static class ManagedObject
 
 			object? value;
 		
-			if (propertyInfo.PropertyType == typeof(string) || propertyInfo.PropertyType.IsPointer || propertyInfo.PropertyType == typeof(IntPtr))
+			if (propertyInfo.PropertyType.IsPointer || propertyInfo.PropertyType == typeof(IntPtr))
 			{
 				value = Marshalling.MarshalPointer(Marshal.ReadIntPtr(InValue), propertyInfo.PropertyType);
 			}
@@ -384,7 +306,7 @@ internal static class ManagedObject
 	}
 
 	[UnmanagedCallersOnly]
-	private static void GetPropertyValue(IntPtr InTarget, UnmanagedString InPropertyName, IntPtr OutValue)
+	private static void GetPropertyValue(IntPtr InTarget, NativeString InPropertyName, IntPtr OutValue)
 	{
 		try
 		{
@@ -408,46 +330,7 @@ internal static class ManagedObject
 				throw new InvalidOperationException($"Attempting to get value of property {InPropertyName} with no getter.");
 			}
 
-			var value = propertyInfo.GetValue(target);
-
-			if (propertyInfo.PropertyType.IsSZArray)
-			{
-				var array = value as Array;
-				var elementType = propertyInfo.PropertyType.GetElementType();
-				Marshalling.CopyArrayToBuffer(OutValue, array, elementType);
-			}
-			else if (value is string s)
-			{
-				var nativeString = UnmanagedString.FromString(s);
-				Marshal.WriteIntPtr(OutValue, nativeString.m_NativeString);
-			}
-			else if (propertyInfo.PropertyType.IsPointer)
-			{
-				unsafe
-				{
-					if (value == null)
-					{
-						Marshal.WriteIntPtr(OutValue, IntPtr.Zero);
-					}
-					else
-					{
-						void* valuePointer = Pointer.Unbox(value);
-						Buffer.MemoryCopy(&valuePointer, OutValue.ToPointer(), IntPtr.Size, IntPtr.Size);
-					}
-				}
-			}
-			else
-			{
-				var valueSize = Marshal.SizeOf(propertyInfo.PropertyType);
-				var handle = GCHandle.Alloc(value, GCHandleType.Pinned);
-
-				unsafe
-				{
-					Buffer.MemoryCopy(handle.AddrOfPinnedObject().ToPointer(), OutValue.ToPointer(), valueSize, valueSize);
-				}
-
-				handle.Free();
-			}
+			Marshalling.MarshalReturnValue(propertyInfo.GetValue(target), propertyInfo.PropertyType, OutValue);
 		}
 		catch (Exception ex)
 		{

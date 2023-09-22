@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "Core.hpp"
-#include "ManagedType.hpp"
 #include "ReflectionType.hpp"
 #include "Utility.hpp"
 
@@ -90,7 +89,7 @@ namespace Coral {
 
 	private:
 		void* m_Handle = nullptr;
-		CSString m_FullName;
+		NativeString m_FullName;
 		HostInstance* m_Host = nullptr;
 
 	private:

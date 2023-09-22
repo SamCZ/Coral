@@ -1,66 +1,68 @@
 ﻿using Coral.Managed.Interop;
 
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace Coral.Managed;
 
-public enum ManagedDataType
-{
-	SByte, Byte,
-	Short, UShort,
-	Int, UInt,
-	Long, ULong,
-
-	Float, Double,
-
-	Bool,
-	String,
-	
-	Struct
-}
-
-public readonly struct ManagedType
-{
-	public readonly ManagedDataType Type;
-	public readonly bool IsPointer;
-}
-
 public static class Marshalling
 {
-
-	public static object? MarshalPointer(IntPtr InValue, ManagedType InManagedType)
-	{
-		if (InManagedType.IsPointer)
-		{
-			return InValue;
-		}
-		
-		return InManagedType.Type switch
-		{
-			ManagedDataType.SByte => Marshal.PtrToStructure<sbyte>(InValue),
-			ManagedDataType.Byte => Marshal.PtrToStructure<byte>(InValue),
-			ManagedDataType.Short => Marshal.PtrToStructure<short>(InValue),
-			ManagedDataType.UShort => Marshal.PtrToStructure<ushort>(InValue),
-			ManagedDataType.Int => Marshal.PtrToStructure<int>(InValue),
-			ManagedDataType.UInt => Marshal.PtrToStructure<uint>(InValue),
-			ManagedDataType.Long => Marshal.PtrToStructure<long>(InValue),
-			ManagedDataType.ULong => Marshal.PtrToStructure<ulong>(InValue),
-			ManagedDataType.Float => Marshal.PtrToStructure<float>(InValue),
-			ManagedDataType.Double => Marshal.PtrToStructure<double>(InValue),
-			ManagedDataType.Bool => Marshal.PtrToStructure<sbyte>(InValue) > 0,
-			ManagedDataType.String => Marshal.PtrToStructure<UnmanagedString>(InValue),
-			ManagedDataType.Struct => InValue,
-			_ => null
-		};
-	}
-
 	struct ArrayContainer
 	{
 		public IntPtr Data;
 		public int Length;
 	};
+
+	public static void MarshalReturnValue(object? InValue, Type? InType, IntPtr OutValue)
+	{
+		if (InType == null)
+			return;
+
+		if (InType.IsSZArray)
+		{
+			var array = InValue as Array;
+			var elementType = InType.GetElementType();
+			CopyArrayToBuffer(OutValue, array, elementType);
+		}
+		else if (InValue is string str)
+		{
+			NativeString nativeString = str;
+			Marshal.StructureToPtr(nativeString, OutValue, false);
+		}
+		else if (InValue is NativeString nativeString)
+		{
+			Marshal.StructureToPtr(nativeString, OutValue, false);
+		}
+		else if (InType.IsPointer)
+		{
+			unsafe
+			{
+				if (InValue == null)
+				{
+					Marshal.WriteIntPtr(OutValue, IntPtr.Zero);
+				}
+				else
+				{
+					void* valuePointer = Pointer.Unbox(InValue);
+					Buffer.MemoryCopy(&valuePointer, OutValue.ToPointer(), IntPtr.Size, IntPtr.Size);
+				}
+			}
+		}
+		else
+		{
+			var valueSize = Marshal.SizeOf(InType);
+			var handle = GCHandle.Alloc(InValue, GCHandleType.Pinned);
+
+			unsafe
+			{
+				Buffer.MemoryCopy(handle.AddrOfPinnedObject().ToPointer(), OutValue.ToPointer(), valueSize, valueSize);
+			}
+
+			handle.Free();
+		}
+	}
 
 	public static object? MarshalArray(IntPtr InArray, Type? InElementType)
 	{
@@ -135,25 +137,64 @@ public static class Marshalling
 			return Marshal.PtrToStructure<byte>(InValue) > 0;
 
 		if (InType == typeof(string))
-			return Marshal.PtrToStringAuto(InValue);
+		{
+			var nativeString = Marshal.PtrToStructure<NativeString>(InValue);
+			return nativeString.ToString();
+		}
+		else if (InType == typeof(NativeString))
+		{
+			return Marshal.PtrToStructure<NativeString>(InValue);
+		}
 
 		if (InType.IsSZArray)
 			return MarshalArray(InValue, InType.GetElementType());
+
+		if (InType.IsGenericType)
+		{
+			if (InType == typeof(NativeArray<>).MakeGenericType(InType.GetGenericArguments().First()))
+			{
+				var elements = Marshal.ReadIntPtr(InValue, 0);
+				var elementCount = Marshal.ReadInt32(InValue, Marshal.SizeOf<IntPtr>());
+				var genericType = typeof(NativeArray<>).MakeGenericType(InType.GetGenericArguments().First());
+				return TypeHelper.CreateInstance(genericType, elements, elementCount);
+			}
+		}
 
 		return Marshal.PtrToStructure(InValue, InType);	
 	}
 	public static T? MarshalPointer<T>(IntPtr InValue) => Marshal.PtrToStructure<T>(InValue);
 
-	public static object?[]? MarshalParameterArray(UnmanagedArray InParameterArray, MethodBase? InMethodInfo)
+	public static IntPtr[] NativeArrayToIntPtrArray(IntPtr InNativeArray, int InLength)
+	{
+		try
+		{
+			if (InNativeArray == IntPtr.Zero || InLength == 0)
+				return Array.Empty<IntPtr>();
+
+			IntPtr[] result = new IntPtr[InLength];
+
+			for (int i = 0; i < InLength; i++)
+				result[i] = Marshal.ReadIntPtr(InNativeArray, i * Marshal.SizeOf<nint>());
+
+			return result;
+		}
+		catch (Exception ex)
+		{
+			ManagedHost.HandleException(ex);
+			return Array.Empty<IntPtr>();
+		}
+	}
+
+	public static object?[]? MarshalParameterArray(IntPtr InNativeArray, int InLength, MethodBase? InMethodInfo)
 	{
 		if (InMethodInfo == null)
 			return null;
 
-		if (InParameterArray.IsEmpty())
+		if (InNativeArray == IntPtr.Zero || InLength == 0)
 			return null;
 
 		var parameterInfos = InMethodInfo.GetParameters();
-		var parameterPointers = InParameterArray.ToIntPtrArray();
+		var parameterPointers = NativeArrayToIntPtrArray(InNativeArray, InLength);
 		var result = new object?[parameterPointers.Length];
 
 		for (int i = 0; i < parameterPointers.Length; i++)

@@ -21,8 +21,9 @@ namespace Testing.Managed {
 		internal static unsafe delegate*<double, double> DoubleMarshalIcall;
 		internal static unsafe delegate*<bool, bool> BoolMarshalIcall;
 		internal static unsafe delegate*<IntPtr, IntPtr> IntPtrMarshalIcall;
-		internal static unsafe delegate*<UnmanagedString, UnmanagedString> StringMarshalIcall;
+		internal static unsafe delegate*<NativeString, NativeString> StringMarshalIcall;
 		internal static unsafe delegate*<Type, Type> TypeMarshalIcall;
+		internal static unsafe delegate*<NativeArray<float>> FloatArrayIcall;
 
 		internal struct DummyStruct
 		{
@@ -98,7 +99,25 @@ namespace Testing.Managed {
 		{
 			unsafe { return BoolMarshalIcall(false); }
 		}
-		
+
+		[Test]
+		public bool FloatArrayTest()
+		{
+			float[] requiredValues = new[]{ 5.0f, 10.0f, 15.0f, 50.0f };
+
+			unsafe
+			{
+				using var arr = FloatArrayIcall();
+				for (int i = 0; i < arr.Length; i++)
+				{
+					if (requiredValues[i] != arr[i])
+						return false;
+				}
+			}
+
+			return true;
+		}
+
 		[Test]
 		public bool IntPtrMarshalTest()
 		{
@@ -113,7 +132,7 @@ namespace Testing.Managed {
 		[Test]
 		public bool StringMarshalTest()
 		{
-			unsafe { return StringMarshalIcall(UnmanagedString.FromString("Hello")) == "Hello"; }
+			unsafe { return StringMarshalIcall("Hello") == "Hello"; }
 		}
 
 		[Test]
@@ -132,7 +151,7 @@ namespace Testing.Managed {
 				return newS.X == 20 && Math.Abs(newS.Y) - 30.0f < 0.001f && newS.Z == 200;
 			}
 		}
-		
+
 		[Test]
 		public bool DummyStructPtrMarshalTest()
 		{
@@ -142,7 +161,7 @@ namespace Testing.Managed {
 				Y = 15.0f,
 				Z = 100
 			};
-			
+
 			unsafe
 			{
 				var newS = DummyStructPtrMarshalIcall(&s);

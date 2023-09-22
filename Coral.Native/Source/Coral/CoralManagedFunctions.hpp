@@ -1,12 +1,12 @@
 #pragma once
 
 #include "Core.hpp"
+#include "NativeString.hpp"
 
 namespace Coral {
 
 	struct UnmanagedArray;
 	enum class AssemblyLoadStatus;
-	struct ObjectCreateInfo;
 	class ManagedObject;
 	enum class GCCollectionMode;
 	enum class ManagedType;
@@ -14,34 +14,32 @@ namespace Coral {
 	class ManagedField;
 	struct MethodInfo;
 
-	using SetInternalCallsFn = void(*)(UnmanagedArray*);
-	using CreateAssemblyLoadContextFn = int32_t(*)(const CharType*);
+	using SetInternalCallsFn = void(*)(void*, int32_t);
+	using CreateAssemblyLoadContextFn = int32_t(*)(NativeString);
 	using UnloadAssemblyLoadContextFn = void(*)(int32_t);
-	using LoadManagedAssemblyFn = int32_t(*)(int32_t, const CharType*);
+	using LoadManagedAssemblyFn = int32_t(*)(int32_t, NativeString);
 	using GetLastLoadStatusFn = AssemblyLoadStatus(*)();
-	using GetAssemblyNameFn = const CharType*(*)(int32_t);
+	using GetAssemblyNameFn = NativeString(*)(int32_t);
 	using QueryAssemblyTypesFn = void(*)(int32_t, ReflectionType*, int32_t*);
-	using GetReflectionTypeFn = Bool32(*)(const CharType*, ReflectionType*);
+	using GetReflectionTypeFn = Bool32(*)(NativeString, ReflectionType*);
 	using GetReflectionTypeFromObjectFn = Bool32(*)(void*, ReflectionType*);
-	using GetFieldsFn = void(*)(const CharType*, ManagedField*, int32_t*);
-	using GetTypeMethodsFn = void(*)(const CharType*, MethodInfo*, int32_t*);
-	using GetTypeIdFn = void(*)(const CharType*, TypeId*);
+	using GetFieldsFn = void(*)(NativeString, ManagedField*, int32_t*);
+	using GetTypeMethodsFn = void(*)(NativeString, MethodInfo*, int32_t*);
+	using GetTypeIdFn = void(*)(NativeString, TypeId*);
 	
-	using FreeManagedStringFn = void(*)(const CharType*);
-	
-	using CreateObjectFn = ManagedObject(*)(const ObjectCreateInfo*);
-	using InvokeMethodFn = void(*)(void*, const CharType*, UnmanagedArray*);
-	using InvokeMethodRetFn = void(*)(void*, const CharType*, UnmanagedArray*, void*);
-	using SetFieldValueFn = void(*)(void*, const CharType*, void*);
-	using GetFieldValueFn = void(*)(void*, const CharType*, void*);
-	using SetPropertyValueFn = void(*)(void*, const CharType*, void*);
-	using GetPropertyValueFn = void(*)(void*, const CharType*, void*);
+	using CreateObjectFn = ManagedObject(*)(NativeString, Bool32, const void**, int32_t);
+	using InvokeMethodFn = void(*)(void*, NativeString, const void**, int32_t);
+	using InvokeMethodRetFn = void(*)(void*, NativeString, const void**, int32_t, void*);
+	using SetFieldValueFn = void(*)(void*, NativeString, void*);
+	using GetFieldValueFn = void(*)(void*, NativeString, void*);
+	using SetPropertyValueFn = void(*)(void*, NativeString, void*);
+	using GetPropertyValueFn = void(*)(void*, NativeString, void*);
 	using DestroyObjectFn = void(*)(void*);
 
-	using IsAssignableToFn = Bool32(*)(const CharType*, const CharType*);
-	using IsAssignableFromFn = Bool32(*)(const CharType*, const CharType*);
+	using IsAssignableToFn = Bool32(*)(NativeString, NativeString);
+	using IsAssignableFromFn = Bool32(*)(NativeString, NativeString);
 
-	using SetExceptionCallbackFn = void(*)(void(*)(const CharType*));
+	using SetExceptionCallbackFn = void(*)(void(*)(NativeString));
 
 	using CollectGarbageFn = void(*)(int32_t, GCCollectionMode, Bool32, Bool32);
 	using WaitForPendingFinalizersFn = void(*)();
@@ -60,8 +58,6 @@ namespace Coral {
 		GetTypeMethodsFn GetTypeMethodsFptr = nullptr;
 		GetTypeIdFn GetTypeIdFptr = nullptr;
 		
-		FreeManagedStringFn FreeManagedStringFptr = nullptr;
-
 		CreateObjectFn CreateObjectFptr = nullptr;
 		CreateAssemblyLoadContextFn CreateAssemblyLoadContextFptr = nullptr;
 		InvokeMethodFn InvokeMethodFptr = nullptr;

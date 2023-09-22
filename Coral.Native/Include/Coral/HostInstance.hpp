@@ -2,7 +2,6 @@
 
 #include "Core.hpp"
 #include "Assembly.hpp"
-#include "ManagedType.hpp"
 #include "ManagedObject.hpp"
 #include "ReflectionType.hpp"
 #include "ManagedField.hpp"
@@ -57,13 +56,11 @@ namespace Coral {
 		}
 		void DestroyInstance(ManagedObject& InObjectHandle);
 
-		void FreeString(const CharType* InString);
-
-		ReflectionType& GetReflectionType(const CSString& InTypeName);
+		ReflectionType& GetReflectionType(const NativeString& InTypeName);
 		ReflectionType& GetReflectionType(ManagedObject InObject);
 
-		const std::vector<ManagedField>& GetFields(const CSString& InTypeName);
-		const std::vector<MethodInfo>& GetMethods(const CSString& InTypeName);
+		const std::vector<ManagedField>& GetFields(const NativeString& InTypeName);
+		const std::vector<MethodInfo>& GetMethods(const NativeString& InTypeName);
 		
 	private:
 		void LoadHostFXR() const;
